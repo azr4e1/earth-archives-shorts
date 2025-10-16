@@ -2,6 +2,8 @@ from agents import FileSearchTool, Agent, ModelSettings, TResponseInputItem, Run
 import sys
 import asyncio
 from pydantic import BaseModel
+from datetime import datetime
+import json
 
 # Tool definitions
 file_search = FileSearchTool(
@@ -120,13 +122,14 @@ async def run_workflow(workflow_input: WorkflowInput):
         "output_parsed": chunker_result_temp.final_output.model_dump()
     }
 
-    return writer_result, chunker_result
+    return writer_result['output_text'], chunker_result['output_parsed']
 
 
 async def main(input):
     script, descriptions = await run_workflow(input)
-    print(f"\n\n\n\nScript: \n\n{script}\n\n\n\n")
-    print(f"Descriptions: \n\n{descriptions}")
+    descriptions['script'] = script
+    with open(f"./scripts/{datetime.now().strftime('%Y%m%d%H%M')}-description.json", "w") as f:
+        json.dump(descriptions, f)
 
 
 if __name__ == "__main__":
