@@ -1,0 +1,2 @@
+openai-agents[voice]
+pydantic==2.12.2
