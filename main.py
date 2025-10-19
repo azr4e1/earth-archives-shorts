@@ -4,6 +4,23 @@ import asyncio
 from pydantic import BaseModel
 from datetime import datetime
 import json
+from pathlib import Path
+import aiofiles
+from elevenlabs.client import AsyncElevenLabs
+from dotenv import load_dotenv
+import os
+from pydub import AudioSegment
+import io
+import openai
+
+load_dotenv()
+
+VEO_LENGTHS = [4, 6, 8]
+
+
+elevenlabs = AsyncElevenLabs(
+    api_key=os.getenv("ELEVENLABS_API_KEY"),
+)
 
 # Tool definitions
 file_search = FileSearchTool(
@@ -21,7 +38,7 @@ writer = Agent(
     name="Writer",
     instructions="""You are a skilled screen writer and narrator. You have create a fictional universe called the Earth Archives, accessible through a vector store. Take the input, and together with your knowledge of The Earth Archives universe (from the vector store), create a script to voice over a video of about 2 minutes.
 
-The script must be long enough to cover the 2 minutes length requirement. It must not have bullet points nor headers or titles. It must read like a speech of David Attenborough, it must flow and be pleasant to listen to.""",
+The script must be long enough to cover the 2 minutes length requirement. It must not have bullet points nor headers or titles. It must read like a novel of Frank Herbert, it must flow and be pleasant to listen to.""",
     model="gpt-4.1",
     tools=[
         file_search
@@ -34,10 +51,8 @@ The script must be long enough to cover the 2 minutes length requirement. It mus
     )
 )
 
-
-chunker = Agent(
-    name="Chunker",
-    instructions="""You are a Veo3 expert user. Your expertise lies in being able to craft perfect prompts for video generation generative models.
+veo_prompt = """
+ You are a Veo3 expert user. Your expertise lies in being able to craft perfect prompts for video generation generative models.
 
 Your input is a script narrating over something. Your job is to split the script into a number of chunks, and rewrite those chunks so that they are the perfect prompt to be used by a video generation model like veo3 or sora, so that they generate a clip to accompany that part of the narration.
 
@@ -47,7 +62,27 @@ For science fiction words and objects that do not exist in our world, create a f
 
 Decide in advance the style of the video and apply it consistently to all descriptions. Include lighting and shot frame and motion.
 
-Example: A medium shot, historical adventure setting: Warm lamplight illuminates a cartographer in a cluttered study, poring over an ancient, sprawling map spread across a large table.""",
+The following elements should be included in your prompt:
+
+    * Subject: The object, person, animal, or scenery that you want in your video, such as cityscape, nature, vehicles, or puppies.
+    * Action: What the subject is doing (for example, walking, running, or turning their head).
+    * Style: Specify creative direction using specific film style keywords, such as sci-fi, horror film, film noir, or animated styles like cartoon.
+    * Camera positioning and motion: [Optional] Control the camera's location and movement using terms like aerial view, eye-level, top-down shot, dolly shot, or worms eye.
+    * Composition: [Optional] How the shot is framed, such as wide shot, close-up, single-shot or two-shot.
+    * Focus and lens effects: [Optional] Use terms like shallow focus, deep focus, soft focus, macro lens, and wide-angle lens to achieve specific visual effects.
+    * Ambiance: [Optional] How the color and light contribute to the scene, such as blue tones, night, or warm tones.
+
+More tips for writing prompts:
+    * Use descriptive language: Use adjectives and adverbs to paint a clear picture for Veo.
+
+Example: Historical diplomatic chamber, crystalline lantern lighting: A slow orbital camera movement circles around a formal assembly of Hathari diplomats—tall, elegant beings with mirrored silver skin that catches and reflects the cool, precise light. They wear delicately layered robes in flowing, translucent fabrics that shimmer subtly with each composed gesture. The Hathari stand in a semicircle formation, their postures serene and deliberate as they negotiate terms in an interstellar council session. One diplomat extends their hand in a measured gesture of agreement, fingers spreading gracefully. Another inclines their head, the motion slow and weighted with significance. A third diplomat's robe catches the light, revealing intricate patterns woven into the fabric. The camera moves from a medium wide shot to a medium close-up on a lead diplomat's face, capturing the subtle expressiveness in their features—a slight narrowing of the eyes, a barely perceptible shift in their reflective skin tone. Audio: Soft ambient hum of chamber acoustics, quiet rustling of fabric, low murmur of diplomatic discourse in an unknown language. The lighting remains consistently cool-toned—pale blues and silvers—highlighting the reflective surfaces of their garments and skin, creating an atmosphere of formality, precision, and measured diplomacy. 
+    """
+
+chunker = Agent(
+    name="Chunker",
+    instructions="""You are a semantic expert. Your expertise lies in being able to identify the transitions moments in a script where the topic changes, slightly or significantly. In the context of a movie script, you are able to split the script in chunks that can be used as references to create clips that, when put together, create the final video the script will be voiced over.
+
+Your input is a script narrating over something. Your job is to split the script into a number of chunks as described earlier. DO NOW REWRITE ANY PART OF THE SCRIPT. Just chunk the script as-is.""",
     model="gpt-4.1",
     output_type=ChunkerSchema,
     model_settings=ModelSettings(
@@ -61,6 +96,25 @@ Example: A medium shot, historical adventure setting: Warm lamplight illuminates
 
 class WorkflowInput(BaseModel):
     input_as_text: str
+
+
+async def elevenlabs_generation(input: str, name: str, semaphore):
+    async with semaphore:
+        audio = elevenlabs.text_to_speech.convert(
+            text=input,
+            voice_id="nrbjbLmJZ7T1FcsFbbeE",
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128",
+        )
+
+        buffer = bytearray()
+        Path("./audio").mkdir(exist_ok=True)
+        async with aiofiles.open(f"./audio/{name}.mp3", "wb") as f:
+            async for chunk in audio:
+                await f.write(chunk)
+                buffer.extend(chunk)
+
+        return buffer
 
 
 # Main code entrypoint
@@ -126,10 +180,22 @@ async def run_workflow(workflow_input: WorkflowInput):
 
 
 async def main(input):
+    semaphore = asyncio.Semaphore(3)
     script, descriptions = await run_workflow(input)
-    descriptions['script'] = script
+    descriptions['full_script'] = script
+    Path("./scripts").mkdir(exist_ok=True)
+    tasks = [elevenlabs_generation(desc, i, semaphore) for i, desc in enumerate(
+        descriptions['descriptions'])]
+    audios = await asyncio.gather(*tasks)
+
     with open(f"./scripts/{datetime.now().strftime('%Y%m%d%H%M')}-description.json", "w") as f:
         json.dump(descriptions, f)
+
+    # determine length of each track
+    lengths = [AudioSegment.from_mp3(io.BytesIO(audio)) for audio in audios]
+    n_descriptions = [l // 8 if l % 8 < 4 else (l // 8) + 1 for l in lengths]
+
+    client = openai.OpenAI()
 
 
 if __name__ == "__main__":

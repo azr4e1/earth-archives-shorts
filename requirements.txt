@@ -1,2 +1,8 @@
 openai-agents[voice]
-pydantic==2.12.2
+aiofiles
+elevenlabs
+openai
+pydantic
+pydub
+python-dotenv
+google-geneai
