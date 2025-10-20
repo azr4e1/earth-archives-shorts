@@ -5,4 +5,4 @@ openai
 pydantic
 pydub
 python-dotenv
-google-geneai
+google-genai
