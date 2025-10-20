@@ -158,6 +158,7 @@ async def elevenlabs_generation(input: str, name: str, semaphore):
             voice_id="nrbjbLmJZ7T1FcsFbbeE",
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",
+            voice_settings={'speed': 1.1}
         )
 
         buffer = bytearray()
