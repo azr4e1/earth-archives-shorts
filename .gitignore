@@ -3,3 +3,4 @@ scripts
 audio
 video
 pycache
+__pycache__
