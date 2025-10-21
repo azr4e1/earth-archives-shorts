@@ -3,6 +3,7 @@ from google.genai import types
 from google import genai
 import os
 import asyncio
+from io import BytesIO
 
 
 class VideoGenerationAgent(Agent):
@@ -33,21 +34,29 @@ class VideoGenerationAgent(Agent):
     async def _run(self, prompt: str):
         for model in self.model:
             try:
-                operation = self.client.models.generate_videos(
+                # Use async version of generate_videos
+                operation = await self.client.aio.models.generate_videos(
                     model=model,
                     prompt=prompt,
                     config=types.GenerateVideosConfig(**self.settings)
                 )
 
-                # Poll the operation status until the video is ready.
+                # Poll asynchronously
                 while not operation.done:
-                    operation = self.client.operations.get(operation)
+                    await asyncio.sleep(10)  # Non-blocking sleep
+                    operation = await self.client.aio.operations.get(operation)
 
                 generated_video = operation.response.generated_videos[0]
-                self.client.files.download(file=generated_video.video)
-                generated_video.video.save(f"{self.name}.mp4")
-                return "Success"
+
+                # Download asynchronously - populates video_bytes
+                await self.client.aio.files.download(file=generated_video.video)
+
+                # Access the bytes
+                video_buffer = BytesIO(generated_video.video.video_bytes)
+
+                return video_buffer
+
             except Exception:
                 continue
 
-        return "Failure"
+        return None
