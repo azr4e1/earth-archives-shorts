@@ -31,11 +31,3 @@ class Agent(ABC):
         )
         logger_handler.setFormatter(logger_formatter)
         self.logger.addHandler(logger_handler)
-
-
-def read_prompt(name: str):
-    with open("prompts.json") as f:
-        prompts = json.load(f)
-
-    prompt = prompts.get(name, None)
-    return prompt

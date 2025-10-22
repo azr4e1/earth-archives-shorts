@@ -3,7 +3,6 @@ from elevenlabs_agents import AudioGenerationAgent
 from video_generation import VideoGenerationAgent
 from utils import Cacher
 import asyncio
-import json
 
 query = 'What are the intelligent species of the Helionis Cluster?'
 writer = WriterAgent('Writer', 'gpt-4.1',

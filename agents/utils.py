@@ -4,6 +4,14 @@ import json
 from pydub import AudioSegment
 
 
+def read_prompt(name: str):
+    with open("prompts.json") as f:
+        prompts = json.load(f)
+
+    prompt = prompts.get(name, None)
+    return prompt
+
+
 class Cacher:
     def __init__(self, basedir: str = ".", save_dir: Path = None):
         if save_dir is not None and isinstance(save_dir, Path) and save_dir.exists():
@@ -27,39 +35,73 @@ class Cacher:
         with open(self.save_dir / "chunks.json", "w") as f:
             json.dump(chunks, f)
 
-    def save_audio(self, audios: list[AudioSegment]):
+    def save_audio(self, audios: dict[str, AudioSegment]):
         audio_dir = self.save_dir / "audio"
         audio_dir.mkdir(exist_ok=True)
-        for i, audio in enumerate(audios):
-            name = audio_dir / f"audio_{i}.mp3"
+        for n, audio in audios.items():
+            name = audio_dir / f"{n}.mp3"
             audio.export(str(name), format='mp3')
 
     def save_descriptions(self, descriptions: dict):
         with open(self.save_dir / "descriptions.json", "w") as f:
             json.dump(descriptions, f)
 
-    def save_videos(self, videos: list[bytearray]):
+    def save_videos(self, videos: dict[str, bytearray]):
         video_dir = self.save_dir / "video"
         video_dir.mkdir(exist_ok=True)
-        for i, video in enumerate(videos):
-            name = video_dir / f"video_{i}.mp4"
+        for n, video in videos.items():
+            name = video_dir / f"{n}.mp4"
             with open(str(name), "wb") as f:
                 f.write(video)
 
     def restore_script(self):
-        pass
+        script_path = self.save_dir / "script.txt"
+        if not script_path.exists():
+            return None
+        script = script_path.read_text()
+        return script
 
     def restore_chunks(self):
-        pass
+        chunks_path = self.save_dir / "chunks.json"
+        if not chunks_path.exists():
+            return None
+        with open(chunks_path) as f:
+            chunks = json.load(f)
+
+        return chunks
 
     def restore_audio(self):
-        pass
+        audio_dir = self.save_dir / "audio"
+        if not audio_dir.exists():
+            return None
+        audios = {}
+        for f in audio_dir.iterdir():
+            name = f.stem
+            audio = AudioSegment.from_mp3(f)
+            audios[name] = audio
+
+        return audios
 
     def restore_descriptions(self):
-        pass
+        descriptions_path = self.save_dir / "descriptions.json"
+        if not descriptions_path.exists():
+            return None
+        with open(descriptions_path) as f:
+            descriptions = json.load(f)
+
+        return descriptions
 
     def restore_videos(self):
-        pass
+        video_dir = self.save_dir / "video"
+        if not video_dir.exists():
+            return None
+        videos = {}
+        for f in video_dir.iterdir():
+            name = f.stem
+            video = f.read_bytes()
+            videos[name] = video
+
+        return videos
 
     def restore(self):
         script = self.restore_script()

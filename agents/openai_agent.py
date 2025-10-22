@@ -1,9 +1,9 @@
-from my_agents import Agent, read_prompt
+from my_agents import Agent
 from pydantic import BaseModel
+from utils import read_prompt
 import openai
 import os
 import logging
-import sys
 import asyncio
 
 
