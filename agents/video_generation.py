@@ -4,6 +4,7 @@ from google import genai
 import os
 import asyncio
 from io import BytesIO
+import logging
 
 
 class VideoGenerationAgent(Agent):
@@ -32,9 +33,11 @@ class VideoGenerationAgent(Agent):
             return result
 
     async def _run(self, prompt: str):
+        self.log("started.", logging.INFO)
         for model in self.model:
             try:
                 # Use async version of generate_videos
+                self.log(f"trying model {model}")
                 operation = await self.client.aio.models.generate_videos(
                     model=model,
                     prompt=prompt,
@@ -54,9 +57,11 @@ class VideoGenerationAgent(Agent):
                 # Access the bytes
                 video_buffer = BytesIO(generated_video.video.video_bytes)
 
+                self.log("completed.", logging.INFO)
                 return video_buffer
 
-            except Exception:
+            except Exception as e:
+                self.log(f"model {model} failed: {e}")
                 continue
 
-        return None
+        raise Exception("couldn't generate video.")
