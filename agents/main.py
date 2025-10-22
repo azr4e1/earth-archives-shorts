@@ -3,9 +3,11 @@ from elevenlabs_agents import VoiceGenerationAgent
 from video_generation import VideoGenerationAgent
 from utils import Cacher, generate_hash
 import asyncio
+from pathlib import Path
 
 ELEVENLABS_SEMAPHORE = 3
 VEO_SEMAPHORE = 3
+SAVE_DIR = Path("./.cache/20251022150425_safe")
 
 # TODO: recovery: provide a flag for each stage to a path where everything gets saved.
 # depending on where the worflow is interrupted, we can recover from that point by looking into the
@@ -83,21 +85,38 @@ async def process_video(descriptions):
 
 
 async def main():
-    cacher = Cacher()
+    cacher = Cacher(save_dir=SAVE_DIR)
+    script, chunks, audios, descriptions, videos = cacher.restore()
     query = 'Write a script about the Onyx Hive'
 
-    script = await process_script(query)
-    cacher.save_script(script)
+    if script is None:
+        script = await process_script(query)
+        cacher.save_script(script)
 
-    chunks = await process_chunks(script)
-    cacher.save_chunks(chunks)
+    if chunks is None:
+        chunks = await process_chunks(script)
+        cacher.save_chunks(chunks)
 
-    audios = await process_voice(chunks)
-    cacher.save_audio(audios)
+    if audios is None:
+        audios = await process_voice(chunks)
+        cacher.save_audio(audios)
+    else:
+        # calculate how many audios we are missing
+        remaining_chunks = []
+        for chunk in chunks:
+            name = generate_hash(chunk)
+            if name not in audios:
+                remaining_chunks.append(chunk)
+        if remaining_chunks:
+            remaining_audios = await process_voice(remaining_chunks)
+            cacher.save_audio(remaining_audios)
+            audios.update(remaining_audios)
 
-    descriptions = await process_veo_prompts(chunks, audios)
-    cacher.save_descriptions(descriptions)
+    if descriptions is None:
+        descriptions = await process_veo_prompts(chunks, audios)
+        cacher.save_descriptions(descriptions)
 
+    # implement retrieval
     videos = await process_video(descriptions)
     cacher.save_videos(videos)
 
