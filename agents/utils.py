@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 from pydub import AudioSegment
+from hashlib import md5, algorithms_available
 
 
 def read_prompt(name: str):
@@ -10,6 +11,10 @@ def read_prompt(name: str):
 
     prompt = prompts.get(name, None)
     return prompt
+
+
+def generate_hash(string: str):
+    return md5(string.encode()).hexdigest()
 
 
 class Cacher:

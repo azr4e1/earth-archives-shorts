@@ -7,7 +7,7 @@ from pydub import AudioSegment
 import io
 
 
-class AudioGenerationAgent(Agent):
+class VoiceGenerationAgent(Agent):
     def __init__(self,
                  name: str,
                  voice_id: str,
