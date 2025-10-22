@@ -52,10 +52,10 @@ class VideoGenerationAgent(Agent):
                 generated_video = operation.response.generated_videos[0]
 
                 # Download asynchronously - populates video_bytes
-                await self.client.aio.files.download(file=generated_video.video)
+                video_buffer = await self.client.aio.files.download(file=generated_video.video)
 
-                # Access the bytes
-                video_buffer = BytesIO(generated_video.video.video_bytes)
+                # # Access the bytes
+                # video_buffer = BytesIO(generated_video.video.video_bytes)
 
                 self.log("completed.", logging.INFO)
                 return video_buffer

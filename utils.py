@@ -2,7 +2,8 @@ from pathlib import Path
 from datetime import datetime
 import json
 from pydub import AudioSegment
-from hashlib import md5, algorithms_available
+from hashlib import md5
+import io
 
 
 def read_prompt(name: str):

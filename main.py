@@ -4,44 +4,55 @@ from video_generation import VideoGenerationAgent
 from utils import Cacher, generate_hash
 import asyncio
 from pathlib import Path
+from collections import defaultdict
 
 ELEVENLABS_SEMAPHORE = 3
-VEO_SEMAPHORE = 3
-SAVE_DIR = Path("./.cache/20251022150425_safe")
-
-# TODO: recovery: provide a flag for each stage to a path where everything gets saved.
-# depending on where the worflow is interrupted, we can recover from that point by looking into the
-# save directory
+VEO_SEMAPHORE = 2
+SAVE_DIR = Path("./.cache/20251022224928_safe")
+OPENAI_MODEL = 'gpt-4.1'
+VECTOR_STORE_ID = "vs_68f01ec9d8a08191b2ace026d2cf8a80"
+VOICE_ID = "nrbjbLmJZ7T1FcsFbbeE"
+ELEVENLABS_MODEL = "eleven_multilingual_v2"
+VOICE_SPEED = 1.1
+ASPECT_RATIO = "9:16"
+VIDEO_DURATION = "8"
 
 
 async def process_script(query):
-    writer = WriterAgent('Writer', 'gpt-4.1',
-                         vector_store_id="vs_68f01ec9d8a08191b2ace026d2cf8a80")
+    writer = WriterAgent('Writer', OPENAI_MODEL,
+                         vector_store_id=VECTOR_STORE_ID)
     script = await writer.run(query=query)
     return script
 
 
 async def process_chunks(script):
-    chunker = ChunkerAgent('Chunker', 'gpt-4.1')
+    chunker = ChunkerAgent('Chunker', OPENAI_MODEL)
     chunks_model = await chunker.run(script=script)
     chunks = chunks_model.model_dump()['descriptions']
 
     return chunks
 
 
-async def process_voice(chunks):
+async def process_voice(chunks, cacher=None):
     chunks_l = len(chunks)
     semaphore = asyncio.Semaphore(ELEVENLABS_SEMAPHORE)
     audio_agents = [VoiceGenerationAgent(f"AudioGeneration_{i}",
-                                         "nrbjbLmJZ7T1FcsFbbeE",
-                                         "eleven_multilingual_v2",
+                                         voice_id=VOICE_ID,
+                                         model=ELEVENLABS_MODEL,
                                          semaphore=semaphore,
-                                         settings={'speed': 1.1})
+                                         settings={'speed': VOICE_SPEED})
                     for i in range(chunks_l)]
-    audios_output = await asyncio.gather(*[audio_agents[i].run(chunks[i])
-                                           for i in range(chunks_l)])
-    audios = {generate_hash(chunks[i]): audios_output[i]
-              for i in range(chunks_l)}
+
+    async def download_and_save_audio(agent, chunk):
+        audio = await agent.run(chunk)
+        audio_hash = generate_hash(chunk)
+        if cacher:
+            cacher.save_audio({audio_hash: audio})
+        return audio_hash, audio
+
+    results = await asyncio.gather(*[download_and_save_audio(audio_agents[i], chunks[i])
+                                     for i in range(chunks_l)])
+    audios = {audio_hash: audio for audio_hash, audio in results}
 
     return audios
 
@@ -49,8 +60,8 @@ async def process_voice(chunks):
 async def process_veo_prompts(chunks, audios):
     chunks_l = len(chunks)
     veo_prompters = [VeoPrompter(
-        f'Prompter_{i}', 'gpt-4.1') for i in range(chunks_l)]
-    lengths = [len(audio) / 1000 for audio in audios.values()]
+        f'Prompter_{i}', OPENAI_MODEL) for i in range(chunks_l)]
+    lengths = [len(audios[generate_hash(chunk)]) for chunk in chunks]
     n_descriptions = [l // 8 if l % 8 < 4 else (l // 8) + 1 for l in lengths]
     result = await asyncio.gather(*[veo_prompters[i].run(chunks[i], n_descriptions[i])
                                     for i in range(chunks_l)])
@@ -62,24 +73,32 @@ async def process_veo_prompts(chunks, audios):
     return descriptions
 
 
-async def process_video(descriptions):
+async def process_video(descriptions, cacher=None):
     video_semaphore = asyncio.Semaphore(VEO_SEMAPHORE)
-    descriptions_flat = [d for _, descs in descriptions.items() for d in descs]
-    video_agents = [VideoGenerationAgent(f"VideoGeneration_{i}",
-                                         semaphore=video_semaphore,
-                                         settings={"aspectRatio": "9:16",
-                                                   "durationSeconds": "8"})
-                    for i in range(len(descriptions_flat))]
-    video_output = await asyncio.gather(*[video_agents[i].run(desc)
-                                          for i, desc in enumerate(descriptions_flat)])
+    descriptions_flat = []
     video_names = []
     for chunk, descs in descriptions.items():
-        hashname = generate_hash(chunk)
-        for i in range(len(descs)):
-            video_names.append(f"{hashname}_{i}")
+        chunk_hash = generate_hash(chunk)
+        for desc in descs:
+            desc_hash = generate_hash(desc)
+            video_names.append(f"{chunk_hash}_{desc_hash}")
+            descriptions_flat.append(desc)
 
-    videos = {video_names[i]: video_output[i]
-              for i in range(len(descriptions_flat))}
+    video_agents = [VideoGenerationAgent(f"VideoGeneration_{i}",
+                                         semaphore=video_semaphore,
+                                         settings={"aspectRatio": ASPECT_RATIO,
+                                                   "durationSeconds": VIDEO_DURATION})
+                    for i in range(len(descriptions_flat))]
+
+    async def download_and_save_video(agent, desc, video_name):
+        video = await agent.run(desc)
+        if cacher:
+            cacher.save_videos({video_name: video})
+        return video_name, video
+
+    results = await asyncio.gather(*[download_and_save_video(video_agents[i], descriptions_flat[i], video_names[i])
+                                     for i in range(len(descriptions_flat))])
+    videos = {video_name: video for video_name, video in results}
 
     return videos
 
@@ -87,7 +106,7 @@ async def process_video(descriptions):
 async def main():
     cacher = Cacher(save_dir=SAVE_DIR)
     script, chunks, audios, descriptions, videos = cacher.restore()
-    query = 'Write a script about the Onyx Hive'
+    query = 'Write a script about the Ortheans'
 
     if script is None:
         script = await process_script(query)
@@ -98,8 +117,7 @@ async def main():
         cacher.save_chunks(chunks)
 
     if audios is None:
-        audios = await process_voice(chunks)
-        cacher.save_audio(audios)
+        audios = await process_voice(chunks, cacher)
     else:
         # calculate how many audios we are missing
         remaining_chunks = []
@@ -108,8 +126,7 @@ async def main():
             if name not in audios:
                 remaining_chunks.append(chunk)
         if remaining_chunks:
-            remaining_audios = await process_voice(remaining_chunks)
-            cacher.save_audio(remaining_audios)
+            remaining_audios = await process_voice(remaining_chunks, cacher)
             audios.update(remaining_audios)
 
     if descriptions is None:
@@ -117,7 +134,20 @@ async def main():
         cacher.save_descriptions(descriptions)
 
     # implement retrieval
-    videos = await process_video(descriptions)
-    cacher.save_videos(videos)
+    if videos is None:
+        videos = await process_video(descriptions, cacher)
+    else:
+        # calculate how many audios we are missing
+        remaining_descriptions = defaultdict(list)
+        for chunk, descs in descriptions.items():
+            chunk_hash = generate_hash(chunk)
+            for desc in descs:
+                desc_hash = generate_hash(desc)
+                name = f"{chunk_hash}_{desc_hash}"
+                if name not in videos:
+                    remaining_descriptions[chunk].append(desc)
+        if remaining_descriptions:
+            remaining_videos = await process_video(remaining_descriptions, cacher)
+            videos.update(remaining_videos)
 
 asyncio.run(main())

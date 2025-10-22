@@ -55,6 +55,8 @@ class OpenaiAgent(Agent):
 
         prompt = ""
         for k, v in inputs.items():
+            if v is None:
+                continue
             prompt += f"### {k} ###\n"
             prompt += f"{v}\n\n"
 
@@ -154,6 +156,6 @@ class VeoPrompter(OpenaiAgent):
         super().__init__(name, model, read_prompt(self.__class__.__name__), api_key,
                          vector_store_id, structured_text, settings)
 
-    async def run(self, script: str, versions: int) -> ChunkerSchema:
-        result = await super().run(script=script, versions=versions)
+    async def run(self, script: str, versions: int, context: str = None) -> ChunkerSchema:
+        result = await super().run(script=script, versions=versions, context=context)
         return result
