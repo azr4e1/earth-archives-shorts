@@ -8,7 +8,7 @@ from collections import defaultdict
 
 ELEVENLABS_SEMAPHORE = 3
 VEO_SEMAPHORE = 2
-SAVE_DIR = Path("./.cache/20251022224928_safe")
+SAVE_DIR = Path("./.cache/20251023110303_safe")
 OPENAI_MODEL = 'gpt-4.1'
 VECTOR_STORE_ID = "vs_68f01ec9d8a08191b2ace026d2cf8a80"
 VOICE_ID = "nrbjbLmJZ7T1FcsFbbeE"
@@ -57,13 +57,14 @@ async def process_voice(chunks, cacher=None):
     return audios
 
 
-async def process_veo_prompts(chunks, audios):
+async def process_veo_prompts(chunks, audios, context=None):
     chunks_l = len(chunks)
     veo_prompters = [VeoPrompter(
         f'Prompter_{i}', OPENAI_MODEL) for i in range(chunks_l)]
-    lengths = [len(audios[generate_hash(chunk)]) for chunk in chunks]
-    n_descriptions = [l // 8 if l % 8 < 4 else (l // 8) + 1 for l in lengths]
-    result = await asyncio.gather(*[veo_prompters[i].run(chunks[i], n_descriptions[i])
+    lengths = [len(audios[generate_hash(chunk)]) / 1000 for chunk in chunks]
+    n_descriptions = [int(l // 8) if l %
+                      8 < 4 else int(l // 8) + 1 for l in lengths]
+    result = await asyncio.gather(*[veo_prompters[i].run(chunks[i], n_descriptions[i], context)
                                     for i in range(chunks_l)])
 
     descriptions = {}
@@ -130,7 +131,11 @@ async def main():
             audios.update(remaining_audios)
 
     if descriptions is None:
-        descriptions = await process_veo_prompts(chunks, audios)
+        context = None
+        context_path = Path("./context.txt")
+        if context_path.exists():
+            context = context_path.read_text()
+        descriptions = await process_veo_prompts(chunks, audios, context)
         cacher.save_descriptions(descriptions)
 
     # implement retrieval

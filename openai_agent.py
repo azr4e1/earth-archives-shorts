@@ -158,4 +158,13 @@ class VeoPrompter(OpenaiAgent):
 
     async def run(self, script: str, versions: int, context: str = None) -> ChunkerSchema:
         result = await super().run(script=script, versions=versions, context=context)
-        return result
+        if context is None:
+            return result
+        result_list = result.model_dump()['descriptions']
+        augmented_list = []
+        for i in result_list:
+            prompt = f"### CONTEXT ###\n{
+                context}\n\n### VIDEO INSTRUCTIONS ###\n{i}"
+            augmented_list.append(prompt)
+        new_result = ChunkerSchema(descriptions=augmented_list)
+        return new_result
