@@ -1,7 +1,7 @@
 from openai_agent import WriterAgent, ChunkerAgent, VeoPrompter
 from elevenlabs_agents import VoiceGenerationAgent
 from video_generation import VideoGenerationAgent
-from utils import Cacher, generate_hash
+from utils import Cacher, generate_hash, get_references
 import asyncio
 from pathlib import Path
 from collections import defaultdict
@@ -74,7 +74,7 @@ async def process_veo_prompts(chunks, audios, context=None):
     return descriptions
 
 
-async def process_video(descriptions, cacher=None):
+async def process_video(descriptions, references: list = [], cacher=None):
     video_semaphore = asyncio.Semaphore(VEO_SEMAPHORE)
     descriptions_flat = []
     video_names = []
@@ -139,8 +139,9 @@ async def main():
         cacher.save_descriptions(descriptions)
 
     # implement retrieval
+    references = get_references("./references")
     if videos is None:
-        videos = await process_video(descriptions, cacher)
+        videos = await process_video(descriptions, references, cacher)
     else:
         # calculate how many audios we are missing
         remaining_descriptions = defaultdict(list)
@@ -152,7 +153,7 @@ async def main():
                 if name not in videos:
                     remaining_descriptions[chunk].append(desc)
         if remaining_descriptions:
-            remaining_videos = await process_video(remaining_descriptions, cacher)
+            remaining_videos = await process_video(remaining_descriptions, references, cacher)
             videos.update(remaining_videos)
 
 asyncio.run(main())

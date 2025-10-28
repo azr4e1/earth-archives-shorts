@@ -12,6 +12,7 @@ class VideoGenerationAgent(Agent):
                  name: str,
                  api_key: str = None,
                  semaphore: asyncio.Semaphore = None,
+                 references: list = [],
                  settings: dict = None):
 
         if api_key is None:
@@ -21,7 +22,13 @@ class VideoGenerationAgent(Agent):
                        "veo-3.0-fast-generate-001", "veo-2.0-generate-001"]
         super().__init__(name, client, model_names)
         self.semaphore = semaphore
+        google_references = []
+        if references:
+            google_references = [types.VideoGenerationReferenceImage(image=types.Image(
+                image_bytes=img), reference_type='asset') for img in references]
         self.settings = settings if settings is not None else {}
+        if google_references:
+            self.settings['reference_images'] = google_references
 
     async def run(self, prompt: str):
         if self.semaphore is None:

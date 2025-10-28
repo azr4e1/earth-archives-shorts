@@ -163,8 +163,7 @@ class VeoPrompter(OpenaiAgent):
         result_list = result.model_dump()['descriptions']
         augmented_list = []
         for i in result_list:
-            prompt = f"### CONTEXT ###\n{
-                context}\n\n### VIDEO INSTRUCTIONS ###\n{i}"
+            prompt = f"### CONTEXT ###\n{context}\n\n### VIDEO INSTRUCTIONS ###\n{i}"
             augmented_list.append(prompt)
         new_result = ChunkerSchema(descriptions=augmented_list)
         return new_result

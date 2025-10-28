@@ -3,7 +3,6 @@ from datetime import datetime
 import json
 from pydub import AudioSegment
 from hashlib import md5
-import io
 
 
 def read_prompt(name: str):
@@ -16,6 +15,19 @@ def read_prompt(name: str):
 
 def generate_hash(string: str):
     return md5(string.encode()).hexdigest()
+
+
+def get_references(dir):
+    references = []
+    path = Path(dir)
+    if not path.exists():
+        return references
+
+    for f in path.iterdir():
+        filebytes = f.read_bytes()
+        references.append(filebytes)
+
+    return references
 
 
 class Cacher:
